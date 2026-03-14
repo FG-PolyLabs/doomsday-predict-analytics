@@ -45,6 +45,20 @@ func (c *Client) GetEventBySlug(slug string) (*GammaEvent, error) {
 	return &events[0], nil
 }
 
+// GetEventsByTag fetches all Polymarket events for a given tag slug.
+func (c *Client) GetEventsByTag(tagSlug string) ([]GammaEvent, error) {
+	u := fmt.Sprintf("%s/events?tag_slug=%s&limit=100", gammaBaseURL, url.QueryEscape(tagSlug))
+	body, err := c.get(u)
+	if err != nil {
+		return nil, fmt.Errorf("fetching events for tag %q: %w", tagSlug, err)
+	}
+	var events []GammaEvent
+	if err := json.Unmarshal(body, &events); err != nil {
+		return nil, fmt.Errorf("parsing events response: %w", err)
+	}
+	return events, nil
+}
+
 // GetMarketByID fetches a single market's full details (including clobTokenIds) by its Gamma market ID.
 func (c *Client) GetMarketByID(marketID string) (*GammaMarket, error) {
 	u := fmt.Sprintf("%s/markets/%s", gammaBaseURL, url.PathEscape(marketID))

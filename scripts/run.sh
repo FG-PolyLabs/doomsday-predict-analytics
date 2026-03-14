@@ -3,6 +3,10 @@
 #
 # Usage:
 #   ./scripts/run.sh execute --slug=<event-slug> [--category=<cat>] [--fidelity=60] [--no-volume]
+#   ./scripts/run.sh execute --tag=<tag-slug>   [--category=<cat>] [--fidelity=60] [--no-volume]
+#   ./scripts/run.sh backfill --tag=<tag-slug>  [--category=<cat>]                  # historical, no-volume
+#   ./scripts/run.sh daily    --tag=<tag-slug>  [--category=<cat>]                  # yesterday's prices, active only
+#   ./scripts/run.sh schedule-daily --tag=<tag-slug> [--category=<cat>] [--schedule="0 0 * * *"]
 #   ./scripts/run.sh schedule --slug=<event-slug> [--category=<cat>] [--schedule="0 * * * *"]
 #   ./scripts/run.sh list-schedules
 #   ./scripts/run.sh delete-schedule <scheduler-job-name>
@@ -17,6 +21,7 @@ subcommand="${1:-}"
 shift || true
 
 slug=""
+tag=""
 category=""
 fidelity=""
 no_volume=false
@@ -25,6 +30,7 @@ schedule="0 * * * *"  # default: hourly
 for arg in "$@"; do
   case "$arg" in
     --slug=*)       slug="${arg#*=}" ;;
+    --tag=*)        tag="${arg#*=}" ;;
     --category=*)   category="${arg#*=}" ;;
     --fidelity=*)   fidelity="${arg#*=}" ;;
     --no-volume)    no_volume=true ;;
@@ -34,27 +40,77 @@ for arg in "$@"; do
 done
 
 build_args() {
-  local args="--slug=${slug}"
-  [[ -n "$category"  ]] && args+=",--category=${category}"
-  [[ -n "$fidelity"  ]] && args+=",--fidelity=${fidelity}"
+  local args=""
+  [[ -n "$slug"     ]] && args="--slug=${slug}"
+  [[ -n "$tag"      ]] && args="--tag=${tag}"
+  [[ -n "$category" ]] && args+=",--category=${category}"
+  [[ -n "$fidelity" ]] && args+=",--fidelity=${fidelity}"
   [[ "$no_volume" == true ]] && args+=",--no-volume"
   echo "$args"
 }
 
+run_job() {
+  local args="$1"
+  echo "Executing Cloud Run job with args: ${args}"
+  gcloud run jobs execute "$JOB_NAME" \
+    --region="$REGION" \
+    --project="$PROJECT" \
+    --args="$args" \
+    --wait
+  echo ""
+  echo "Results: https://console.cloud.google.com/bigquery?project=${PROJECT}&ws=!1m5!1m4!4m3!1s${PROJECT}!2sdoomsday!3smarket_snapshots"
+}
+
 case "$subcommand" in
   execute)
-    if [[ -z "$slug" ]]; then
-      echo "Error: --slug is required" >&2; exit 1
+    if [[ -z "$slug" && -z "$tag" ]]; then
+      echo "Error: --slug or --tag is required" >&2; exit 1
     fi
-    ARGS=$(build_args)
-    echo "Executing Cloud Run job with args: ${ARGS}"
-    gcloud run jobs execute "$JOB_NAME" \
-      --region="$REGION" \
+    run_job "$(build_args)"
+    ;;
+
+  backfill)
+    # Historical backfill: all events for a tag, full history, no volume fields.
+    if [[ -z "$tag" ]]; then
+      echo "Error: --tag is required for backfill" >&2; exit 1
+    fi
+    ARGS="--tag=${tag}"
+    [[ -n "$category" ]] && ARGS+=",--category=${category}"
+    ARGS+=",--no-volume"
+    run_job "$ARGS"
+    ;;
+
+  daily)
+    # Incremental load: yesterday's end-of-day prices for all active expirations.
+    if [[ -z "$tag" ]]; then
+      echo "Error: --tag is required for daily" >&2; exit 1
+    fi
+    ARGS="--tag=${tag}"
+    [[ -n "$category" ]] && ARGS+=",--category=${category}"
+    ARGS+=",--yesterday,--active-only"
+    run_job "$ARGS"
+    ;;
+
+  schedule-daily)
+    # Create a Cloud Scheduler job that runs daily at midnight UTC.
+    if [[ -z "$tag" ]]; then
+      echo "Error: --tag is required for schedule-daily" >&2; exit 1
+    fi
+    ARGS="--tag=${tag}"
+    [[ -n "$category" ]] && ARGS+=",--category=${category}"
+    ARGS+=",--yesterday,--active-only"
+
+    SCHEDULER_NAME="doomsday-daily-${tag}"
+    DAILY_SCHEDULE="${schedule:-0 0 * * *}"
+    echo "Creating Cloud Scheduler job '${SCHEDULER_NAME}' (${DAILY_SCHEDULE})"
+    gcloud scheduler jobs create http "$SCHEDULER_NAME" \
       --project="$PROJECT" \
-      --args="$ARGS" \
-      --wait
-    echo ""
-    echo "Results: https://console.cloud.google.com/bigquery?project=${PROJECT}&ws=!1m5!1m4!4m3!1s${PROJECT}!2sdoomsday!3smarket_snapshots"
+      --location="$REGION" \
+      --schedule="$DAILY_SCHEDULE" \
+      --uri="https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT}/jobs/${JOB_NAME}:run" \
+      --message-body="{\"overrides\":{\"containerOverrides\":[{\"args\":[$(echo "$ARGS" | sed 's/,/\",\"/g' | sed 's/^/\"/' | sed 's/$/\"/')]}]}}" \
+      --oauth-service-account-email="$SA" \
+      --time-zone="UTC"
     ;;
 
   schedule)
@@ -93,7 +149,7 @@ case "$subcommand" in
     ;;
 
   *)
-    echo "Usage: $0 {execute|schedule|list-schedules|delete-schedule} [options]"
+    echo "Usage: $0 {execute|backfill|daily|schedule-daily|schedule|list-schedules|delete-schedule} [options]"
     exit 1
     ;;
 esac

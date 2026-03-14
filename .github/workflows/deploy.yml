@@ -10,6 +10,7 @@ env:
   REGION: us-central1
   REGISTRY: us-central1-docker.pkg.dev
   IMAGE: us-central1-docker.pkg.dev/fg-polylabs/doomsday/doomsday-polymarket
+  EXPORTER_IMAGE: us-central1-docker.pkg.dev/fg-polylabs/doomsday/doomsday-exporter
 
 jobs:
   build-and-deploy:
@@ -31,15 +32,37 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGISTRY }} --quiet
 
-      - name: Build and push Docker image
+      - name: Build and push doomsday-polymarket image
         run: |
           docker build -t ${{ env.IMAGE }}:${{ github.sha }} -t ${{ env.IMAGE }}:latest .
           docker push ${{ env.IMAGE }}:${{ github.sha }}
           docker push ${{ env.IMAGE }}:latest
 
-      - name: Update Cloud Run Job image
+      - name: Build and push doomsday-exporter image
+        run: |
+          docker build -f Dockerfile.exporter -t ${{ env.EXPORTER_IMAGE }}:${{ github.sha }} -t ${{ env.EXPORTER_IMAGE }}:latest .
+          docker push ${{ env.EXPORTER_IMAGE }}:${{ github.sha }}
+          docker push ${{ env.EXPORTER_IMAGE }}:latest
+
+      - name: Update doomsday-polymarket Cloud Run Job
         run: |
           gcloud run jobs update doomsday-polymarket \
             --image=${{ env.IMAGE }}:${{ github.sha }} \
             --region=${{ env.REGION }} \
             --project=${{ env.PROJECT_ID }}
+
+      - name: Deploy doomsday-exporter Cloud Run Job
+        run: |
+          if gcloud run jobs describe doomsday-exporter \
+              --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --quiet 2>/dev/null; then
+            gcloud run jobs update doomsday-exporter \
+              --image=${{ env.EXPORTER_IMAGE }}:${{ github.sha }} \
+              --region=${{ env.REGION }} \
+              --project=${{ env.PROJECT_ID }}
+          else
+            gcloud run jobs create doomsday-exporter \
+              --image=${{ env.EXPORTER_IMAGE }}:${{ github.sha }} \
+              --region=${{ env.REGION }} \
+              --project=${{ env.PROJECT_ID }} \
+              --service-account=doomsday-runner@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+          fi

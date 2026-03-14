@@ -19,6 +19,7 @@ CONFIG_PATH="//app/markets.json"
 PROJECT=fg-polylabs
 REGION=us-central1
 JOB_NAME=doomsday-polymarket
+EXPORTER_JOB_NAME=doomsday-exporter
 SA=doomsday-runner@fg-polylabs.iam.gserviceaccount.com
 
 subcommand="${1:-}"
@@ -117,6 +118,31 @@ case "$subcommand" in
       --time-zone="UTC"
     ;;
 
+  export)
+    # Run the exporter job immediately (one-off export to GCS).
+    echo "Executing exporter job..."
+    gcloud run jobs execute "$EXPORTER_JOB_NAME" \
+      --region="$REGION" \
+      --project="$PROJECT" \
+      --wait
+    echo "Data exported to gs://fg-polylabs-doomsday"
+    ;;
+
+  schedule-export)
+    # Create a monthly Cloud Scheduler job for the GCS export (1st of each month at 2am UTC).
+    EXPORT_SCHEDULE="${schedule:-0 2 1 * *}"
+    SCHEDULER_NAME="doomsday-export-monthly"
+    echo "Creating Cloud Scheduler job '${SCHEDULER_NAME}' (${EXPORT_SCHEDULE})"
+    gcloud scheduler jobs create http "$SCHEDULER_NAME" \
+      --project="$PROJECT" \
+      --location="$REGION" \
+      --schedule="$EXPORT_SCHEDULE" \
+      --uri="https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT}/jobs/${EXPORTER_JOB_NAME}:run" \
+      --message-body='{"overrides":{}}' \
+      --oauth-service-account-email="$SA" \
+      --time-zone="UTC"
+    ;;
+
   list-schedules)
     gcloud scheduler jobs list \
       --project="$PROJECT" \
@@ -136,7 +162,7 @@ case "$subcommand" in
     ;;
 
   *)
-    echo "Usage: $0 {execute|backfill|daily|schedule-daily|schedule|list-schedules|delete-schedule} [options]"
+    echo "Usage: $0 {execute|backfill|daily|schedule-daily|export|schedule-export|schedule|list-schedules|delete-schedule} [options]"
     exit 1
     ;;
 esac

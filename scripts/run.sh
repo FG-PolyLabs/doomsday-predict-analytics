@@ -12,6 +12,10 @@
 #   ./scripts/run.sh delete-schedule <scheduler-job-name>
 set -euo pipefail
 
+# Use //app/ (double leading slash) so Git bash on Windows doesn't convert the path;
+# Linux treats //app/ identically to /app/.
+CONFIG_PATH="//app/markets.json"
+
 PROJECT=fg-polylabs
 REGION=us-central1
 JOB_NAME=doomsday-polymarket
@@ -71,17 +75,19 @@ case "$subcommand" in
 
   backfill)
     # Historical backfill: all markets in config, full history, no volume fields.
-    run_job "--config=/app/markets.json,--no-volume"
+    run_job "--config=${CONFIG_PATH},--no-volume"
     ;;
 
   daily)
     # Incremental load: yesterday's end-of-day prices for all active expirations in config.
-    run_job "--config=/app/markets.json,--yesterday,--active-only"
+    run_job "--config=${CONFIG_PATH},--yesterday,--active-only"
     ;;
 
   schedule-daily)
     # Create a Cloud Scheduler job that runs daily at midnight UTC using the bundled config.
-    DAILY_SCHEDULE="${schedule:-0 0 * * *}"
+    DAILY_SCHEDULE="${schedule:-0 0 * * *}"  # default midnight UTC, overridden only if --schedule= passed
+    # If user didn't pass --schedule, reset to midnight (script default is hourly for other commands)
+    [[ "$schedule" == "0 * * * *" ]] && DAILY_SCHEDULE="0 1 * * *"
     SCHEDULER_NAME="doomsday-daily"
     echo "Creating Cloud Scheduler job '${SCHEDULER_NAME}' (${DAILY_SCHEDULE})"
     gcloud scheduler jobs create http "$SCHEDULER_NAME" \
@@ -89,7 +95,7 @@ case "$subcommand" in
       --location="$REGION" \
       --schedule="$DAILY_SCHEDULE" \
       --uri="https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT}/jobs/${JOB_NAME}:run" \
-      --message-body='{"overrides":{"containerOverrides":[{"args":["--config=/app/markets.json","--yesterday","--active-only"]}]}}' \
+      --message-body="{\"overrides\":{\"containerOverrides\":[{\"args\":[\"--config=${CONFIG_PATH}\",\"--yesterday\",\"--active-only\"]}]}}" \
       --oauth-service-account-email="$SA" \
       --time-zone="UTC"
     ;;

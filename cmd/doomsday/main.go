@@ -23,9 +23,11 @@ import (
 )
 
 // marketConfig is one entry in markets.json.
+// Use Tag+SlugPrefix to auto-discover a series of events, or Slug for a single event with multiple markets.
 type marketConfig struct {
-	Tag        string `json:"tag"`
-	SlugPrefix string `json:"slug_prefix"`
+	Slug       string `json:"slug"`        // exact event slug (single-event mode)
+	Tag        string `json:"tag"`         // tag to search (series mode)
+	SlugPrefix string `json:"slug_prefix"` // filter tag results by slug prefix (series mode)
 	Category   string `json:"category"`
 }
 
@@ -89,19 +91,31 @@ func main() {
 			log.Fatalf("loading config %q: %v", *configFile, err)
 		}
 		for _, cfg := range configs {
-			events, err := client.GetEventsByTag(cfg.Tag)
-			if err != nil {
-				log.Printf("warning: could not fetch events for tag %q: %v", cfg.Tag, err)
-				continue
-			}
-			var matched int
-			for _, e := range events {
-				if strings.HasPrefix(e.Slug, cfg.SlugPrefix) {
-					toProcess = append(toProcess, eventWithCategory{e, cfg.Category})
-					matched++
+			if cfg.Slug != "" {
+				// Single-event mode: fetch the event directly by slug.
+				event, err := client.GetEventBySlug(cfg.Slug)
+				if err != nil {
+					log.Printf("warning: could not fetch event for slug %q: %v", cfg.Slug, err)
+					continue
 				}
+				toProcess = append(toProcess, eventWithCategory{*event, cfg.Category})
+				log.Printf("slug %q: loaded event %q (%d market(s))", cfg.Slug, event.Title, len(event.Markets))
+			} else {
+				// Series mode: discover events by tag + slug prefix.
+				events, err := client.GetEventsByTag(cfg.Tag)
+				if err != nil {
+					log.Printf("warning: could not fetch events for tag %q: %v", cfg.Tag, err)
+					continue
+				}
+				var matched int
+				for _, e := range events {
+					if strings.HasPrefix(e.Slug, cfg.SlugPrefix) {
+						toProcess = append(toProcess, eventWithCategory{e, cfg.Category})
+						matched++
+					}
+				}
+				log.Printf("tag %q + prefix %q: matched %d event(s)", cfg.Tag, cfg.SlugPrefix, matched)
 			}
-			log.Printf("tag %q + prefix %q: matched %d event(s)", cfg.Tag, cfg.SlugPrefix, matched)
 		}
 
 	case *slug != "":

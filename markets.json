@@ -3,5 +3,28 @@
     "tag": "us-iran",
     "slug_prefix": "us-x-iran-ceasefire",
     "category": "war"
+  },
+  {
+    "tag": "us-iran",
+    "slug_prefix": "will-the-us-invade-iran",
+    "category": "war"
+  },
+  {
+    "tag": "iranian-leadership-regime",
+    "slug_prefix": "will-the-iranian-regime-fall-by",
+    "category": "war"
+  },
+  {
+    "tag": "israel",
+    "slug_prefix": "netanyahu-out",
+    "category": "war"
+  },
+  {
+    "slug": "trump-announces-end-of-military-operations-against-iran-by",
+    "category": "war"
+  },
+  {
+    "slug": "iran-x-israelus-conflict-ends-by",
+    "category": "war"
   }
 ]

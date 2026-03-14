@@ -3,9 +3,9 @@
 //
 // Usage:
 //
-//	doomsday --slug=us-x-iran-ceasefire-by-march-31 --category=war
-//	doomsday --tag=iran-ceasefire --category=war --no-volume          # historical backfill
-//	doomsday --tag=iran-ceasefire --category=war --yesterday --active-only  # daily incremental
+//	doomsday --config=/app/markets.json --no-volume                 # historical backfill
+//	doomsday --config=/app/markets.json --yesterday --active-only   # daily incremental
+//	doomsday --slug=us-x-iran-ceasefire-before-july --category=war  # single slug
 package main
 
 import (
@@ -16,15 +16,24 @@ import (
 	"log"
 	"math"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/FutureGadgetLabs/doomsday-predict-analytics/internal/doomsday"
 )
 
+// marketConfig is one entry in markets.json.
+type marketConfig struct {
+	Tag        string `json:"tag"`
+	SlugPrefix string `json:"slug_prefix"`
+	Category   string `json:"category"`
+}
+
 func main() {
-	slug := flag.String("slug", "", "Polymarket event slug (mutually exclusive with --tag)")
-	tag := flag.String("tag", "", "Polymarket tag slug — auto-discovers all events for this tag")
-	category := flag.String("category", "", "Event category for filtering/grouping (e.g. war, nuclear, political)")
+	configFile := flag.String("config", "", "Path to markets.json — discovers active slugs per configured market")
+	slug := flag.String("slug", "", "Polymarket event slug (single-market mode)")
+	tag := flag.String("tag", "", "Polymarket tag slug — discovers all events for this tag")
+	category := flag.String("category", "", "Event category (used with --slug or --tag; overrides config file)")
 	fidelity := flag.Int("fidelity", 60, "Price snapshot granularity in minutes (e.g., 60=hourly, 1440=daily)")
 	dryRun := flag.Bool("dry-run", false, "Print rows as JSONL to stdout instead of loading to BigQuery")
 	noVolume := flag.Bool("no-volume", false, "Store NULL for volume/liquidity/bid-ask fields (use for historical backfills)")
@@ -34,12 +43,8 @@ func main() {
 	activeOnly := flag.Bool("active-only", false, "Skip closed/resolved markets (use for daily incremental loads)")
 	flag.Parse()
 
-	if *slug == "" && *tag == "" {
-		fmt.Fprintln(os.Stderr, "Usage: doomsday --slug=<event-slug> | --tag=<tag-slug> [options]")
-		os.Exit(1)
-	}
-	if *slug != "" && *tag != "" {
-		fmt.Fprintln(os.Stderr, "Error: --slug and --tag are mutually exclusive")
+	if *configFile == "" && *slug == "" && *tag == "" {
+		fmt.Fprintln(os.Stderr, "Usage: doomsday --config=<path> | --slug=<slug> | --tag=<tag> [options]")
 		os.Exit(1)
 	}
 
@@ -70,17 +75,44 @@ func main() {
 
 	client := doomsday.NewClient()
 
-	// Collect events from either a single slug or tag-based discovery.
-	var events []doomsday.GammaEvent
-	if *slug != "" {
+	// Build the list of (events, category) pairs to process.
+	type eventWithCategory struct {
+		event    doomsday.GammaEvent
+		category string
+	}
+	var toProcess []eventWithCategory
+
+	switch {
+	case *configFile != "":
+		configs, err := loadMarketConfigs(*configFile)
+		if err != nil {
+			log.Fatalf("loading config %q: %v", *configFile, err)
+		}
+		for _, cfg := range configs {
+			events, err := client.GetEventsByTag(cfg.Tag)
+			if err != nil {
+				log.Printf("warning: could not fetch events for tag %q: %v", cfg.Tag, err)
+				continue
+			}
+			var matched int
+			for _, e := range events {
+				if strings.HasPrefix(e.Slug, cfg.SlugPrefix) {
+					toProcess = append(toProcess, eventWithCategory{e, cfg.Category})
+					matched++
+				}
+			}
+			log.Printf("tag %q + prefix %q: matched %d event(s)", cfg.Tag, cfg.SlugPrefix, matched)
+		}
+
+	case *slug != "":
 		event, err := client.GetEventBySlug(*slug)
 		if err != nil {
 			log.Fatalf("could not find event for slug %q: %v", *slug, err)
 		}
-		events = []doomsday.GammaEvent{*event}
-	} else {
-		var err error
-		events, err = client.GetEventsByTag(*tag)
+		toProcess = []eventWithCategory{{*event, *category}}
+
+	case *tag != "":
+		events, err := client.GetEventsByTag(*tag)
 		if err != nil {
 			log.Fatalf("could not find events for tag %q: %v", *tag, err)
 		}
@@ -88,11 +120,20 @@ func main() {
 			log.Fatalf("no events found for tag %q", *tag)
 		}
 		log.Printf("discovered %d event(s) for tag %q", len(events), *tag)
+		for _, e := range events {
+			toProcess = append(toProcess, eventWithCategory{e, *category})
+		}
+	}
+
+	if len(toProcess) == 0 {
+		log.Fatal("no events to process")
 	}
 
 	var snapshots []doomsday.MarketSnapshot
 
-	for _, event := range events {
+	for _, item := range toProcess {
+		event := item.event
+		cat := item.category
 		log.Printf("processing event %q (%d market(s))", event.Title, len(event.Markets))
 
 		if len(event.Markets) == 0 {
@@ -100,7 +141,7 @@ func main() {
 			continue
 		}
 
-		// Hydrate any markets missing CLOB token IDs (the event endpoint sometimes omits them).
+		// Hydrate any markets missing CLOB token IDs.
 		markets := event.Markets
 		for i, m := range markets {
 			if len(m.ClobTokenIDs) == 0 && m.ID != "" {
@@ -128,7 +169,7 @@ func main() {
 			}
 
 			// Determine history time window; overrides take precedence over market dates.
-			histStart := now.AddDate(-1, 0, 0) // fallback: 1 year ago
+			histStart := now.AddDate(-1, 0, 0)
 			if market.StartDateIso != "" {
 				if t, err := time.Parse("2006-01-02", market.StartDateIso[:10]); err == nil {
 					histStart = t
@@ -142,7 +183,7 @@ func main() {
 			histEnd := now
 			if market.EndDateIso != "" {
 				if t, err := time.Parse("2006-01-02", market.EndDateIso[:10]); err == nil {
-					expiration = t.Add(24 * time.Hour) // end of that day
+					expiration = t.Add(24 * time.Hour)
 					if expiration.Before(now) {
 						histEnd = expiration
 					}
@@ -185,8 +226,7 @@ func main() {
 				noPriceByTs[pt.T] = pt.P
 			}
 
-			var lastYesPrice float64 = -1 // sentinel so first point always passes
-
+			var lastYesPrice float64 = -1
 			for _, pt := range yesHistory {
 				ts := time.Unix(pt.T, 0).UTC().Round(15 * time.Minute)
 
@@ -207,7 +247,7 @@ func main() {
 					EventSlug:           event.Slug,
 					EventTitle:          event.Title,
 					Question:            market.Question,
-					Category:            *category,
+					Category:            cat,
 					SnapshotTimestamp:   ts,
 					ExpirationTimestamp: expiration,
 					YesPrice:            pt.P,
@@ -232,7 +272,7 @@ func main() {
 		}
 	}
 
-	log.Printf("collected %d snapshot(s) across %d event(s)", len(snapshots), len(events))
+	log.Printf("collected %d snapshot(s) across %d event(s)", len(snapshots), len(toProcess))
 
 	if *dryRun {
 		enc := json.NewEncoder(os.Stdout)
@@ -257,6 +297,19 @@ func main() {
 	}
 	skipped := len(snapshots) - inserted
 	log.Printf("done: %d new rows inserted, %d duplicates skipped", inserted, skipped)
+}
+
+func loadMarketConfigs(path string) ([]marketConfig, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var configs []marketConfig
+	if err := json.NewDecoder(f).Decode(&configs); err != nil {
+		return nil, err
+	}
+	return configs, nil
 }
 
 // deriveNoHistory computes NO prices as 1 - YES price for each point.

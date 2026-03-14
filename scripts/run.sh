@@ -70,45 +70,26 @@ case "$subcommand" in
     ;;
 
   backfill)
-    # Historical backfill: all events for a tag, full history, no volume fields.
-    if [[ -z "$tag" ]]; then
-      echo "Error: --tag is required for backfill" >&2; exit 1
-    fi
-    ARGS="--tag=${tag}"
-    [[ -n "$category" ]] && ARGS+=",--category=${category}"
-    ARGS+=",--no-volume"
-    run_job "$ARGS"
+    # Historical backfill: all markets in config, full history, no volume fields.
+    run_job "--config=/app/markets.json,--no-volume"
     ;;
 
   daily)
-    # Incremental load: yesterday's end-of-day prices for all active expirations.
-    if [[ -z "$tag" ]]; then
-      echo "Error: --tag is required for daily" >&2; exit 1
-    fi
-    ARGS="--tag=${tag}"
-    [[ -n "$category" ]] && ARGS+=",--category=${category}"
-    ARGS+=",--yesterday,--active-only"
-    run_job "$ARGS"
+    # Incremental load: yesterday's end-of-day prices for all active expirations in config.
+    run_job "--config=/app/markets.json,--yesterday,--active-only"
     ;;
 
   schedule-daily)
-    # Create a Cloud Scheduler job that runs daily at midnight UTC.
-    if [[ -z "$tag" ]]; then
-      echo "Error: --tag is required for schedule-daily" >&2; exit 1
-    fi
-    ARGS="--tag=${tag}"
-    [[ -n "$category" ]] && ARGS+=",--category=${category}"
-    ARGS+=",--yesterday,--active-only"
-
-    SCHEDULER_NAME="doomsday-daily-${tag}"
+    # Create a Cloud Scheduler job that runs daily at midnight UTC using the bundled config.
     DAILY_SCHEDULE="${schedule:-0 0 * * *}"
+    SCHEDULER_NAME="doomsday-daily"
     echo "Creating Cloud Scheduler job '${SCHEDULER_NAME}' (${DAILY_SCHEDULE})"
     gcloud scheduler jobs create http "$SCHEDULER_NAME" \
       --project="$PROJECT" \
       --location="$REGION" \
       --schedule="$DAILY_SCHEDULE" \
       --uri="https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT}/jobs/${JOB_NAME}:run" \
-      --message-body="{\"overrides\":{\"containerOverrides\":[{\"args\":[$(echo "$ARGS" | sed 's/,/\",\"/g' | sed 's/^/\"/' | sed 's/$/\"/')]}]}}" \
+      --message-body='{"overrides":{"containerOverrides":[{"args":["--config=/app/markets.json","--yesterday","--active-only"]}]}}' \
       --oauth-service-account-email="$SA" \
       --time-zone="UTC"
     ;;

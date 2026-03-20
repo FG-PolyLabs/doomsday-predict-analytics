@@ -1,30 +1,41 @@
 [
-  {
-    "tag": "us-iran",
-    "slug_prefix": "us-x-iran-ceasefire",
-    "category": "war"
-  },
-  {
-    "tag": "us-iran",
-    "slug_prefix": "will-the-us-invade-iran",
-    "category": "war"
-  },
-  {
-    "tag": "iranian-leadership-regime",
-    "slug_prefix": "will-the-iranian-regime-fall-by",
-    "category": "war"
-  },
-  {
-    "tag": "israel",
-    "slug_prefix": "netanyahu-out",
-    "category": "war"
-  },
-  {
-    "slug": "trump-announces-end-of-military-operations-against-iran-by",
-    "category": "war"
-  },
-  {
-    "slug": "iran-x-israelus-conflict-ends-by",
-    "category": "war"
-  }
+  { "tag": "us-iran",                  "slug_prefix": "us-x-iran-ceasefire",             "category": "Geopolitics" },
+  { "tag": "us-iran",                  "slug_prefix": "will-the-us-invade-iran",          "category": "Geopolitics" },
+  { "tag": "iranian-leadership-regime","slug_prefix": "will-the-iranian-regime-fall-by",  "category": "Geopolitics" },
+  { "tag": "israel",                   "slug_prefix": "netanyahu-out",                    "category": "Geopolitics" },
+
+  { "slug": "iran-leadership-change-by",                                           "category": "Geopolitics" },
+  { "slug": "us-forces-enter-iran-by",                                             "category": "Geopolitics" },
+  { "slug": "iran-x-israelus-conflict-ends-by",                                    "category": "Geopolitics" },
+  { "slug": "trump-announces-end-of-military-operations-against-iran-by",          "category": "Geopolitics" },
+  { "slug": "us-strike-on-mexico-by",                                              "category": "Geopolitics" },
+  { "slug": "will-the-us-invade-venezuela-in-2025",                                "category": "Geopolitics" },
+  { "slug": "will-france-uk-or-germany-strike-iran-by-june-30-259",                "category": "Geopolitics" },
+  { "slug": "strait-of-hormuz-traffic-returns-to-normal-by-april-30",              "category": "Geopolitics" },
+  { "slug": "russia-x-ukraine-ceasefire-before-2027",                              "category": "Geopolitics" },
+  { "slug": "russia-x-ukraine-ceasefire-by-june-30-2026",                          "category": "Geopolitics" },
+  { "slug": "russia-x-ukraine-ceasefire-by-march-31-2026",                         "category": "Geopolitics" },
+  { "slug": "will-russia-capture-kostyantynivka-by",                               "category": "Geopolitics" },
+  { "slug": "will-china-invade-taiwan-before-2027",                                "category": "Geopolitics" },
+  { "slug": "will-trump-acquire-greenland-before-2027",                            "category": "Geopolitics" },
+  { "slug": "will-reza-pahlavi-enter-iran-by-june-30",                             "category": "Geopolitics" },
+  { "slug": "xi-jinping-out-before-2027",                                          "category": "Geopolitics" },
+
+  { "slug": "trump-out-as-president-before-2027",                                  "category": "Politics" },
+  { "slug": "will-trump-visit-china-by",                                           "category": "Politics" },
+  { "slug": "scotus-accepts-sports-event-contract-case-by-july-31-2026",           "category": "Politics" },
+
+  { "slug": "deepseek-v4-released-by-march-31",                                    "category": "AI & Tech" },
+  { "slug": "ai-bubble-burst-by",                                                  "category": "AI & Tech" },
+  { "slug": "openai-ipo-by",                                                       "category": "AI & Tech" },
+  { "slug": "claude-5-released-by",                                                "category": "AI & Tech" },
+
+  { "slug": "fed-rate-cut-by-629",                                                 "category": "Finance & Crypto" },
+  { "slug": "microstrategy-sell-any-bitcoin-in-2025",                              "category": "Finance & Crypto" },
+  { "slug": "kraken-ipo-in-2025",                                                  "category": "Finance & Crypto" },
+
+  { "slug": "new-stranger-things-episode-released-by-wednesday",                   "category": "Entertainment" },
+  { "slug": "taylor-swift-pregnant-in-2025",                                       "category": "Entertainment" },
+
+  { "slug": "will-jesus-christ-return-before-2027",                                "category": "Other" }
 ]

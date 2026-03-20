@@ -10,6 +10,9 @@
 #   ./scripts/run.sh schedule --slug=<event-slug> [--category=<cat>] [--schedule="0 * * * *"]
 #   ./scripts/run.sh list-schedules
 #   ./scripts/run.sh delete-schedule <scheduler-job-name>
+#
+# Note: the monthly GCS export schedule (doomsday-export-monthly) has been removed.
+# The daily job now exports to GCS and Drive automatically after each BQ insert.
 set -euo pipefail
 
 # Use //app/ (double leading slash) so Git bash on Windows doesn't convert the path;
@@ -129,18 +132,10 @@ case "$subcommand" in
     ;;
 
   schedule-export)
-    # Create a monthly Cloud Scheduler job for the GCS export (1st of each month at 2am UTC).
-    EXPORT_SCHEDULE="${schedule:-0 2 1 * *}"
-    SCHEDULER_NAME="doomsday-export-monthly"
-    echo "Creating Cloud Scheduler job '${SCHEDULER_NAME}' (${EXPORT_SCHEDULE})"
-    gcloud scheduler jobs create http "$SCHEDULER_NAME" \
-      --project="$PROJECT" \
-      --location="$REGION" \
-      --schedule="$EXPORT_SCHEDULE" \
-      --uri="https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT}/jobs/${EXPORTER_JOB_NAME}:run" \
-      --message-body='{"overrides":{}}' \
-      --oauth-service-account-email="$SA" \
-      --time-zone="UTC"
+    echo "Error: doomsday-export-monthly has been retired." >&2
+    echo "The daily job now exports to GCS and Drive automatically after each BQ insert." >&2
+    echo "To delete the old scheduler job: $0 delete-schedule doomsday-export-monthly" >&2
+    exit 1
     ;;
 
   list-schedules)
@@ -162,7 +157,7 @@ case "$subcommand" in
     ;;
 
   *)
-    echo "Usage: $0 {execute|backfill|daily|schedule-daily|export|schedule-export|schedule|list-schedules|delete-schedule} [options]"
+    echo "Usage: $0 {execute|backfill|daily|schedule-daily|export|schedule|list-schedules|delete-schedule} [options]"
     exit 1
     ;;
 esac

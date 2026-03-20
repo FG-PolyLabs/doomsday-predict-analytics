@@ -311,6 +311,12 @@ func main() {
 	}
 	skipped := len(snapshots) - inserted
 	log.Printf("done: %d new rows inserted, %d duplicates skipped", inserted, skipped)
+
+	// Export latest data to GCS and Google Drive after every successful insert.
+	exportCfg := doomsday.DefaultExportConfig()
+	if err := doomsday.RunExport(ctx, exportCfg); err != nil {
+		log.Printf("warning: post-insert GCS/Drive export failed: %v", err)
+	}
 }
 
 func loadMarketConfigs(path string) ([]marketConfig, error) {

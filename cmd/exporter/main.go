@@ -3,8 +3,8 @@
 //
 // GCS layout:
 //
-//	gs://doomsday-data/index.json
-//	gs://doomsday-data/events/<event-slug>.json
+//	gs://fg-polylabs-doomsday/index.json
+//	gs://fg-polylabs-doomsday/events/<event-slug>.json
 //
 // Drive layout (when DRIVE_PARENT_FOLDER_ID env var is set):
 //

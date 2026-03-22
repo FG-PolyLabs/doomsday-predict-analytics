@@ -15,7 +15,7 @@ Polymarket API
 doomsday-polymarket (Cloud Run Job)
     │  reads market configs from doomsday.markets BQ table
     │  writes snapshots to doomsday.market_snapshots BQ table
-    │  exports JSON to gs://doomsday-data (GCS)
+    │  exports JSON to gs://fg-polylabs-doomsday (GCS)
     │
 doomsday-api (Cloud Run Service)
     │  CRUD on doomsday.markets
@@ -35,7 +35,7 @@ Frontend Admin (doomsday-predict-frontend-admin)
 | GCP Project | `fg-polylabs` |
 | Region | `us-central1` |
 | BigQuery Dataset | `fg-polylabs.doomsday` |
-| GCS Bucket | `gs://doomsday-data` |
+| GCS Bucket | `gs://fg-polylabs-doomsday` |
 | Artifact Registry | `us-central1-docker.pkg.dev/fg-polylabs/doomsday/` |
 | Cloud Run Job (collector) | `doomsday-polymarket` |
 | Cloud Run Job (exporter) | `doomsday-exporter` |

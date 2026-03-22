@@ -87,22 +87,14 @@ jobs:
 
       - name: Deploy doomsday-api Cloud Run Service
         run: |
-          if gcloud run services describe doomsday-api \
-              --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --quiet 2>/dev/null; then
-            gcloud run services update doomsday-api \
-              --image=${{ env.API_IMAGE }}:${{ github.sha }} \
-              --region=${{ env.REGION }} \
-              --project=${{ env.PROJECT_ID }}
-          else
-            gcloud run services create doomsday-api \
-              --image=${{ env.API_IMAGE }}:${{ github.sha }} \
-              --region=${{ env.REGION }} \
-              --project=${{ env.PROJECT_ID }} \
-              --service-account=doomsday-runner@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
-              --port=8080 \
-              --memory=512Mi \
-              --cpu=1 \
-              --min-instances=0 \
-              --max-instances=5 \
-              --allow-unauthenticated
-          fi
+          gcloud run deploy doomsday-api \
+            --image=${{ env.API_IMAGE }}:${{ github.sha }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --service-account=doomsday-runner@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
+            --port=8080 \
+            --memory=512Mi \
+            --cpu=1 \
+            --min-instances=0 \
+            --max-instances=5 \
+            --allow-unauthenticated

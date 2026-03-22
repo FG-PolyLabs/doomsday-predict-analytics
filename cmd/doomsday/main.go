@@ -1,11 +1,14 @@
-// doomsday is a CLI runner that pulls binary yes/no prediction market data from
-// Polymarket and lands it into BigQuery (fg-polylabs.doomsday.market_snapshots).
+// doomsday pulls binary yes/no prediction market data from Polymarket and loads
+// it into BigQuery (fg-polylabs.doomsday.market_snapshots).
+//
+// Market configurations live in the doomsday.markets BigQuery table.
 //
 // Usage:
 //
-//	doomsday --config=/app/markets.json --no-volume                 # historical backfill
-//	doomsday --config=/app/markets.json --yesterday --active-only   # daily incremental
-//	doomsday --slug=us-x-iran-ceasefire-before-july --category=war  # single slug
+//	doomsday --all                                   # daily incremental (all active markets)
+//	doomsday --all --no-volume                       # historical backfill (all markets)
+//	doomsday --slug=us-x-iran-ceasefire-before-july --category=war  # single event
+//	doomsday --tag=us-iran --category=Geopolitics    # tag discovery
 package main
 
 import (
@@ -22,20 +25,11 @@ import (
 	"github.com/FutureGadgetLabs/doomsday-predict-analytics/internal/doomsday"
 )
 
-// marketConfig is one entry in markets.json.
-// Use Tag+SlugPrefix to auto-discover a series of events, or Slug for a single event with multiple markets.
-type marketConfig struct {
-	Slug       string `json:"slug"`        // exact event slug (single-event mode)
-	Tag        string `json:"tag"`         // tag to search (series mode)
-	SlugPrefix string `json:"slug_prefix"` // filter tag results by slug prefix (series mode)
-	Category   string `json:"category"`
-}
-
 func main() {
-	configFile := flag.String("config", "", "Path to markets.json — discovers active slugs per configured market")
+	all := flag.Bool("all", false, "Load all active market configs from doomsday.markets BQ table (use for daily cron)")
 	slug := flag.String("slug", "", "Polymarket event slug (single-market mode)")
 	tag := flag.String("tag", "", "Polymarket tag slug — discovers all events for this tag")
-	category := flag.String("category", "", "Event category (used with --slug or --tag; overrides config file)")
+	category := flag.String("category", "", "Event category (used with --slug or --tag)")
 	fidelity := flag.Int("fidelity", 60, "Price snapshot granularity in minutes (e.g., 60=hourly, 1440=daily)")
 	dryRun := flag.Bool("dry-run", false, "Print rows as JSONL to stdout instead of loading to BigQuery")
 	noVolume := flag.Bool("no-volume", false, "Store NULL for volume/liquidity/bid-ask fields (use for historical backfills)")
@@ -45,8 +39,8 @@ func main() {
 	activeOnly := flag.Bool("active-only", false, "Skip closed/resolved markets (use for daily incremental loads)")
 	flag.Parse()
 
-	if *configFile == "" && *slug == "" && *tag == "" {
-		fmt.Fprintln(os.Stderr, "Usage: doomsday --config=<path> | --slug=<slug> | --tag=<tag> [options]")
+	if !*all && *slug == "" && *tag == "" {
+		fmt.Fprintln(os.Stderr, "Usage: doomsday --all | --slug=<slug> | --tag=<tag> [options]")
 		os.Exit(1)
 	}
 
@@ -59,7 +53,6 @@ func main() {
 		overrideEnd = todayMidnight
 		*fidelity = 1440
 	}
-	// Explicit date flags override --yesterday.
 	if *startDate != "" {
 		t, err := time.Parse("2006-01-02", *startDate)
 		if err != nil {
@@ -75,9 +68,9 @@ func main() {
 		overrideEnd = t
 	}
 
+	ctx := context.Background()
 	client := doomsday.NewClient()
 
-	// Build the list of (events, category) pairs to process.
 	type eventWithCategory struct {
 		event    doomsday.GammaEvent
 		category string
@@ -85,14 +78,19 @@ func main() {
 	var toProcess []eventWithCategory
 
 	switch {
-	case *configFile != "":
-		configs, err := loadMarketConfigs(*configFile)
+	case *all:
+		store, err := doomsday.NewMarketStore(ctx, "fg-polylabs", "doomsday")
 		if err != nil {
-			log.Fatalf("loading config %q: %v", *configFile, err)
+			log.Fatalf("creating market store: %v", err)
 		}
+		defer store.Close()
+		configs, err := store.ListActive(ctx)
+		if err != nil {
+			log.Fatalf("loading market configs from BQ: %v", err)
+		}
+		log.Printf("loaded %d active market config(s) from doomsday.markets", len(configs))
 		for _, cfg := range configs {
 			if cfg.Slug != "" {
-				// Single-event mode: fetch the event directly by slug.
 				event, err := client.GetEventBySlug(cfg.Slug)
 				if err != nil {
 					log.Printf("warning: could not fetch event for slug %q: %v", cfg.Slug, err)
@@ -101,7 +99,6 @@ func main() {
 				toProcess = append(toProcess, eventWithCategory{*event, cfg.Category})
 				log.Printf("slug %q: loaded event %q (%d market(s))", cfg.Slug, event.Title, len(event.Markets))
 			} else {
-				// Series mode: discover events by tag + slug prefix.
 				events, err := client.GetEventsByTag(cfg.Tag)
 				if err != nil {
 					log.Printf("warning: could not fetch events for tag %q: %v", cfg.Tag, err)
@@ -182,7 +179,6 @@ func main() {
 				continue
 			}
 
-			// Determine history time window; overrides take precedence over market dates.
 			histStart := now.AddDate(-1, 0, 0)
 			if market.StartDateIso != "" {
 				if t, err := time.Parse("2006-01-02", market.StartDateIso[:10]); err == nil {
@@ -298,7 +294,6 @@ func main() {
 		return
 	}
 
-	ctx := context.Background()
 	loader, err := doomsday.NewBQLoader(ctx, "fg-polylabs", "doomsday", "market_snapshots")
 	if err != nil {
 		log.Fatalf("creating BigQuery loader: %v", err)
@@ -317,19 +312,6 @@ func main() {
 	if err := doomsday.RunExport(ctx, exportCfg); err != nil {
 		log.Printf("warning: post-insert GCS/Drive export failed: %v", err)
 	}
-}
-
-func loadMarketConfigs(path string) ([]marketConfig, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	var configs []marketConfig
-	if err := json.NewDecoder(f).Decode(&configs); err != nil {
-		return nil, err
-	}
-	return configs, nil
 }
 
 // deriveNoHistory computes NO prices as 1 - YES price for each point.

@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	cloud.google.com/go/bigquery v1.74.0
 	cloud.google.com/go/storage v1.61.3
+	golang.org/x/oauth2 v0.36.0
 	google.golang.org/api v0.271.0
 )
 
@@ -53,7 +54,6 @@ require (
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
 	golang.org/x/mod v0.32.0 // indirect
 	golang.org/x/net v0.51.0 // indirect
-	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260109210033-bd525da824e2 // indirect

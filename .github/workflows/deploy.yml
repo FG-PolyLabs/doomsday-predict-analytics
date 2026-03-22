@@ -11,6 +11,7 @@ env:
   REGISTRY: us-central1-docker.pkg.dev
   IMAGE: us-central1-docker.pkg.dev/fg-polylabs/doomsday/doomsday-polymarket
   EXPORTER_IMAGE: us-central1-docker.pkg.dev/fg-polylabs/doomsday/doomsday-exporter
+  API_IMAGE: us-central1-docker.pkg.dev/fg-polylabs/doomsday/doomsday-api
 
 jobs:
   build-and-deploy:
@@ -44,6 +45,12 @@ jobs:
           docker push ${{ env.EXPORTER_IMAGE }}:${{ github.sha }}
           docker push ${{ env.EXPORTER_IMAGE }}:latest
 
+      - name: Build and push doomsday-api image
+        run: |
+          docker build -f Dockerfile.api -t ${{ env.API_IMAGE }}:${{ github.sha }} -t ${{ env.API_IMAGE }}:latest .
+          docker push ${{ env.API_IMAGE }}:${{ github.sha }}
+          docker push ${{ env.API_IMAGE }}:latest
+
       - name: Update doomsday-polymarket Cloud Run Job
         run: |
           gcloud run jobs update doomsday-polymarket \
@@ -65,4 +72,26 @@ jobs:
               --region=${{ env.REGION }} \
               --project=${{ env.PROJECT_ID }} \
               --service-account=doomsday-runner@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+          fi
+
+      - name: Deploy doomsday-api Cloud Run Service
+        run: |
+          if gcloud run services describe doomsday-api \
+              --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --quiet 2>/dev/null; then
+            gcloud run services update doomsday-api \
+              --image=${{ env.API_IMAGE }}:${{ github.sha }} \
+              --region=${{ env.REGION }} \
+              --project=${{ env.PROJECT_ID }}
+          else
+            gcloud run services create doomsday-api \
+              --image=${{ env.API_IMAGE }}:${{ github.sha }} \
+              --region=${{ env.REGION }} \
+              --project=${{ env.PROJECT_ID }} \
+              --service-account=doomsday-runner@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
+              --port=8080 \
+              --memory=256Mi \
+              --cpu=1 \
+              --min-instances=0 \
+              --max-instances=5 \
+              --allow-unauthenticated
           fi

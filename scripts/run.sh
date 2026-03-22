@@ -1,23 +1,19 @@
 #!/usr/bin/env bash
 # run.sh — execute or schedule the doomsday-polymarket Cloud Run job.
 #
+# Market configs are stored in the doomsday.markets BigQuery table.
+# Use the API (doomsday-api Cloud Run Service) to add/remove/toggle markets.
+#
 # Usage:
+#   ./scripts/run.sh daily                                        # yesterday's prices, all active markets
+#   ./scripts/run.sh backfill                                     # full history, all markets, no volume
 #   ./scripts/run.sh execute --slug=<event-slug> [--category=<cat>] [--fidelity=60] [--no-volume]
 #   ./scripts/run.sh execute --tag=<tag-slug>   [--category=<cat>] [--fidelity=60] [--no-volume]
-#   ./scripts/run.sh backfill --tag=<tag-slug>  [--category=<cat>]                  # historical, no-volume
-#   ./scripts/run.sh daily    --tag=<tag-slug>  [--category=<cat>]                  # yesterday's prices, active only
-#   ./scripts/run.sh schedule-daily --tag=<tag-slug> [--category=<cat>] [--schedule="0 0 * * *"]
-#   ./scripts/run.sh schedule --slug=<event-slug> [--category=<cat>] [--schedule="0 * * * *"]
+#   ./scripts/run.sh schedule-daily [--schedule="0 1 * * *"]
 #   ./scripts/run.sh list-schedules
 #   ./scripts/run.sh delete-schedule <scheduler-job-name>
-#
-# Note: the monthly GCS export schedule (doomsday-export-monthly) has been removed.
-# The daily job now exports to GCS and Drive automatically after each BQ insert.
+#   ./scripts/run.sh export
 set -euo pipefail
-
-# Use //app/ (double leading slash) so Git bash on Windows doesn't convert the path;
-# Linux treats //app/ identically to /app/.
-CONFIG_PATH="//app/markets.json"
 
 PROJECT=fg-polylabs
 REGION=us-central1
@@ -33,7 +29,7 @@ tag=""
 category=""
 fidelity=""
 no_volume=false
-schedule="0 * * * *"  # default: hourly
+schedule="0 * * * *"  # default: hourly (for ad-hoc schedules)
 
 for arg in "$@"; do
   case "$arg" in
@@ -78,19 +74,18 @@ case "$subcommand" in
     ;;
 
   backfill)
-    # Historical backfill: all markets in config, full history, no volume fields.
-    run_job "--config=${CONFIG_PATH},--no-volume"
+    # Historical backfill: all active markets in doomsday.markets, full history, no volume fields.
+    run_job "--all,--no-volume"
     ;;
 
   daily)
-    # Incremental load: yesterday's end-of-day prices for all active expirations in config.
-    run_job "--config=${CONFIG_PATH},--yesterday,--active-only"
+    # Incremental load: yesterday's end-of-day prices for all active markets.
+    run_job "--all,--yesterday,--active-only"
     ;;
 
   schedule-daily)
-    # Create a Cloud Scheduler job that runs daily at midnight UTC using the bundled config.
-    DAILY_SCHEDULE="${schedule:-0 0 * * *}"  # default midnight UTC, overridden only if --schedule= passed
-    # If user didn't pass --schedule, reset to midnight (script default is hourly for other commands)
+    # Create a Cloud Scheduler job that runs daily at 1 AM UTC for all active markets.
+    DAILY_SCHEDULE="${schedule:-0 1 * * *}"
     [[ "$schedule" == "0 * * * *" ]] && DAILY_SCHEDULE="0 1 * * *"
     SCHEDULER_NAME="doomsday-daily"
     echo "Creating Cloud Scheduler job '${SCHEDULER_NAME}' (${DAILY_SCHEDULE})"
@@ -99,24 +94,7 @@ case "$subcommand" in
       --location="$REGION" \
       --schedule="$DAILY_SCHEDULE" \
       --uri="https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT}/jobs/${JOB_NAME}:run" \
-      --message-body="{\"overrides\":{\"containerOverrides\":[{\"args\":[\"--config=${CONFIG_PATH}\",\"--yesterday\",\"--active-only\"]}]}}" \
-      --oauth-service-account-email="$SA" \
-      --time-zone="UTC"
-    ;;
-
-  schedule)
-    if [[ -z "$slug" ]]; then
-      echo "Error: --slug is required" >&2; exit 1
-    fi
-    ARGS=$(build_args)
-    SCHEDULER_NAME="doomsday-${slug}"
-    echo "Creating Cloud Scheduler job '${SCHEDULER_NAME}' (${schedule})"
-    gcloud scheduler jobs create http "$SCHEDULER_NAME" \
-      --project="$PROJECT" \
-      --location="$REGION" \
-      --schedule="$schedule" \
-      --uri="https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT}/jobs/${JOB_NAME}:run" \
-      --message-body="{\"overrides\":{\"containerOverrides\":[{\"args\":[$(echo "$ARGS" | sed 's/,/\",\"/g' | sed 's/^/\"/' | sed 's/$/\"/')]}]}}" \
+      --message-body='{"overrides":{"containerOverrides":[{"args":["--all","--yesterday","--active-only"]}]}}' \
       --oauth-service-account-email="$SA" \
       --time-zone="UTC"
     ;;
@@ -129,13 +107,6 @@ case "$subcommand" in
       --project="$PROJECT" \
       --wait
     echo "Data exported to gs://fg-polylabs-doomsday"
-    ;;
-
-  schedule-export)
-    echo "Error: doomsday-export-monthly has been retired." >&2
-    echo "The daily job now exports to GCS and Drive automatically after each BQ insert." >&2
-    echo "To delete the old scheduler job: $0 delete-schedule doomsday-export-monthly" >&2
-    exit 1
     ;;
 
   list-schedules)
@@ -157,7 +128,7 @@ case "$subcommand" in
     ;;
 
   *)
-    echo "Usage: $0 {execute|backfill|daily|schedule-daily|export|schedule|list-schedules|delete-schedule} [options]"
+    echo "Usage: $0 {daily|backfill|execute|schedule-daily|export|list-schedules|delete-schedule} [options]"
     exit 1
     ;;
 esac

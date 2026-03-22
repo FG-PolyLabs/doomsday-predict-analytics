@@ -39,7 +39,7 @@ type ExportConfig struct {
 func DefaultExportConfig() ExportConfig {
 	return ExportConfig{
 		Project:       "fg-polylabs",
-		BucketName:    "fg-polylabs-doomsday",
+		BucketName:    "doomsday-data",
 		DriveFolderID: os.Getenv("DRIVE_PARENT_FOLDER_ID"),
 	}
 }

@@ -51,12 +51,23 @@ jobs:
           docker push ${{ env.API_IMAGE }}:${{ github.sha }}
           docker push ${{ env.API_IMAGE }}:latest
 
-      - name: Update doomsday-polymarket Cloud Run Job
+      - name: Deploy doomsday-polymarket Cloud Run Job
         run: |
-          gcloud run jobs update doomsday-polymarket \
-            --image=${{ env.IMAGE }}:${{ github.sha }} \
-            --region=${{ env.REGION }} \
-            --project=${{ env.PROJECT_ID }}
+          if gcloud run jobs describe doomsday-polymarket \
+              --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --quiet 2>/dev/null; then
+            gcloud run jobs update doomsday-polymarket \
+              --image=${{ env.IMAGE }}:${{ github.sha }} \
+              --region=${{ env.REGION }} \
+              --project=${{ env.PROJECT_ID }}
+          else
+            gcloud run jobs create doomsday-polymarket \
+              --image=${{ env.IMAGE }}:${{ github.sha }} \
+              --region=${{ env.REGION }} \
+              --project=${{ env.PROJECT_ID }} \
+              --service-account=doomsday-runner@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
+              --task-timeout=10m \
+              --max-retries=1
+          fi
 
       - name: Deploy doomsday-exporter Cloud Run Job
         run: |

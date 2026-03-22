@@ -1,0 +1,64 @@
+name: Checkpoint Tag
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # daily at 2 am UTC
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Optional reason for this checkpoint'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  checkpoint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history + tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create checkpoint tag if HEAD has moved
+        env:
+          REASON: ${{ github.event.inputs.reason }}
+        run: |
+          set -euo pipefail
+
+          # Find the most recent checkpoint-* tag reachable from HEAD
+          LAST_TAG=$(git tag --list 'checkpoint-*' --sort=-version:refname \
+                     | head -n 1 || true)
+
+          if [ -n "$LAST_TAG" ]; then
+            LAST_TAGGED=$(git rev-list -n 1 "$LAST_TAG")
+            CURRENT=$(git rev-parse HEAD)
+            if [ "$LAST_TAGGED" = "$CURRENT" ]; then
+              echo "HEAD has not moved since $LAST_TAG — skipping."
+              exit 0
+            fi
+          fi
+
+          # Build a unique tag name for today
+          BASE="checkpoint-$(date -u +%Y-%m-%d)"
+          TAG="$BASE"
+          SUFFIX=1
+          while git tag --list "$TAG" | grep -q .; do
+            SUFFIX=$(( SUFFIX + 1 ))
+            TAG="${BASE}-${SUFFIX}"
+          done
+
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          LAST_MSG=$(git log -1 --pretty=%s)
+          ANNOTATION="checkpoint at ${SHORT_SHA}: ${LAST_MSG}"
+          [ -n "$REASON" ] && ANNOTATION="${ANNOTATION} (${REASON})"
+
+          git config user.email "actions@github.com"
+          git config user.name  "GitHub Actions"
+          git tag -a "$TAG" -m "$ANNOTATION"
+          git push origin "$TAG"
+
+          echo "Created tag: $TAG"
+          echo "  annotation: $ANNOTATION"

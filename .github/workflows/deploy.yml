@@ -97,4 +97,5 @@ jobs:
             --cpu=1 \
             --min-instances=0 \
             --max-instances=5 \
-            --allow-unauthenticated
+            --allow-unauthenticated \
+            --set-env-vars=DATA_SYNC_PAT=${{ secrets.DATA_SYNC_PAT }}

@@ -15,6 +15,7 @@
 //	GET    /api/v1/markets/{id}
 //	PATCH  /api/v1/markets/{id}
 //	DELETE /api/v1/markets/{id}
+//	POST   /api/v1/markets/export
 //	GET    /api/v1/events
 //	GET    /api/v1/events/{slug}
 //	POST   /api/v1/jobs/run
@@ -81,6 +82,7 @@ func main() {
 	mux.HandleFunc("GET /api/v1/markets/{id}", s.getMarket)
 	mux.HandleFunc("PATCH /api/v1/markets/{id}", s.updateMarket)
 	mux.HandleFunc("DELETE /api/v1/markets/{id}", s.deleteMarket)
+	mux.HandleFunc("POST /api/v1/markets/export", s.exportMarkets)
 	mux.HandleFunc("GET /api/v1/events", s.listEvents)
 	mux.HandleFunc("GET /api/v1/events/{slug}", s.getEvent)
 	mux.HandleFunc("POST /api/v1/jobs/run", s.runJob)
@@ -255,6 +257,30 @@ func (s *server) deleteMarket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// POST /api/v1/markets/export
+// Exports all markets from BigQuery to GCS (data/markets.jsonl) and commits
+// the same file to the GitHub data repo (requires DATA_SYNC_PAT env var).
+func (s *server) exportMarkets(w http.ResponseWriter, r *http.Request) {
+	cfg := doomsday.DefaultMarketExportConfig()
+	result, err := doomsday.ExportMarkets(r.Context(), s.store, cfg)
+	if err != nil && result == nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// Partial success (GCS ok, GitHub failed) — return 207 with the error message.
+	if err != nil {
+		w := w
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMultiStatus)
+		json.NewEncoder(w).Encode(map[string]any{
+			"result": result,
+			"error":  err.Error(),
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 // GET /api/v1/events

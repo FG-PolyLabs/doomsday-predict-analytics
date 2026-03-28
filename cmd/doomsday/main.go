@@ -312,6 +312,9 @@ func main() {
 	if err := doomsday.RunExport(ctx, exportCfg); err != nil {
 		log.Printf("warning: post-insert GCS/Drive export failed: %v", err)
 	}
+	if err := doomsday.RunThetaExport(ctx, exportCfg); err != nil {
+		log.Printf("warning: post-insert theta export failed: %v", err)
+	}
 }
 
 // deriveNoHistory computes NO prices as 1 - YES price for each point.

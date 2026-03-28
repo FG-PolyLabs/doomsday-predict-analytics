@@ -27,4 +27,8 @@ func main() {
 		log.Printf("export failed: %v", err)
 		os.Exit(1)
 	}
+	if err := doomsday.RunThetaExport(ctx, cfg); err != nil {
+		log.Printf("theta export failed: %v", err)
+		os.Exit(1)
+	}
 }
